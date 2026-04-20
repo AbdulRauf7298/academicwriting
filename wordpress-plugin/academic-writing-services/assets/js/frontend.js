@@ -1,4 +1,7 @@
 (function () {
+  const URGENT_THRESHOLD_HOURS = 72;
+  const EXPRESS_THRESHOLD_HOURS = 144;
+
   function parseDateInput(value) {
     if (!value) return null;
     const dt = new Date(value);
@@ -20,23 +23,29 @@
     if (!deadline) return "standard";
     const now = new Date();
     const diffHours = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60);
-    if (diffHours <= 72) return "urgent";
-    if (diffHours <= 144) return "express";
+    if (diffHours <= URGENT_THRESHOLD_HOURS) return "urgent";
+    if (diffHours <= EXPRESS_THRESHOLD_HOURS) return "express";
     return "standard";
   }
 
   function calculate(form) {
+    const config = window.awsConfig || {};
+    if (!config.pricing && !window.__awsConfigWarned) {
+      console.warn("awsConfig.pricing is missing; order form pricing defaults to 0.");
+      window.__awsConfigWarned = true;
+    }
+
     const level = form.querySelector('[name="academic_level"]')?.value || "undergraduate";
     const wordCount = Number(form.querySelector('[name="word_count"]')?.value || 0);
     const deadline = parseDateInput(form.querySelector('[name="deadline"]')?.value);
     const urgency = getUrgency(deadline);
     const pages = Math.max(1, Math.ceil(wordCount / 250));
-    const perPage = awsConfig?.pricing?.[level]?.[urgency] ?? 0;
+    const perPage = config?.pricing?.[level]?.[urgency] ?? 0;
     const total = pages * Number(perPage);
 
     const output = form.querySelector(".aws-price-value");
     if (output) {
-      output.textContent = `${awsConfig?.currency || "£"}${total.toFixed(2)}`;
+      output.textContent = `${config?.currency || "£"}${total.toFixed(2)}`;
     }
   }
 
@@ -64,8 +73,14 @@
     if (!buttons.length) return;
     buttons.forEach((button) => {
       button.addEventListener("click", () => {
-        buttons.forEach((b) => b.classList.remove("active"));
+        buttons.forEach((b) => {
+          b.classList.remove("active");
+          b.setAttribute("aria-selected", "false");
+          b.setAttribute("tabindex", "-1");
+        });
         button.classList.add("active");
+        button.setAttribute("aria-selected", "true");
+        button.setAttribute("tabindex", "0");
       });
     });
   }

@@ -13,6 +13,8 @@ if (! defined('ABSPATH')) {
 class AWS_Website_Kit
 {
     private const OPTION_KEY = 'aws_settings';
+    private const URGENT_THRESHOLD_HOURS = 72;
+    private const EXPRESS_THRESHOLD_HOURS = 144;
 
     public function __construct()
     {
@@ -108,11 +110,11 @@ class AWS_Website_Kit
             'blog' => ['title' => 'Blog', 'content' => '<h2>Latest Academic Writing Guides</h2>'],
             'pricing' => ['title' => 'Pricing', 'content' => '[aws_order_form]'],
             'reviews' => ['title' => 'Reviews', 'content' => '<h2>Student Reviews</h2><p>Verified testimonials are displayed across service pages and homepage sections.</p>'],
-            'privacy-policy' => ['title' => 'Privacy Policy', 'content' => 'GDPR-compliant privacy policy content goes here.'],
-            'terms-and-conditions' => ['title' => 'Terms & Conditions', 'content' => 'Service usage, payment and revision terms go here.'],
-            'refund-policy' => ['title' => 'Refund Policy', 'content' => 'Clear refund and cancellation terms go here.'],
+            'privacy-policy' => ['title' => 'Privacy Policy', 'content' => '<h2>Privacy Policy</h2><p>We process customer data in line with GDPR and UK data protection law. We collect only data required for service delivery, support, and payment processing. Payment data is handled by third-party processors (such as Stripe/PayPal). Customers may request access, correction, or deletion of their personal data by contacting support.</p>'],
+            'terms-and-conditions' => ['title' => 'Terms & Conditions', 'content' => '<h2>Terms & Conditions</h2><p>By using this service, you agree that all materials provided are for academic reference and study support only. Delivery timelines, revision windows, and payment conditions are defined at order confirmation. Misuse of reference materials is the customer’s sole responsibility.</p>'],
+            'refund-policy' => ['title' => 'Refund Policy', 'content' => '<h2>Refund Policy</h2><p>Refund requests are assessed based on delivery stage, scope completed, and documented quality concerns. Partial or full refunds may be issued where applicable. Please refer to support for case-specific review within the stated refund window.</p>'],
             'anti-plagiarism-policy' => ['title' => 'Anti-Plagiarism Policy', 'content' => 'All work is checked for originality before delivery.'],
-            'academic-integrity-disclaimer' => ['title' => 'Academic Integrity Disclaimer', 'content' => 'All work is sold as a model/reference only and must not be submitted as final work.'],
+            'academic-integrity-disclaimer' => ['title' => 'Academic Integrity Disclaimer', 'content' => '<h2>Academic Integrity Disclaimer</h2><p>All delivered material is intended strictly as a model answer, study reference, or research aid. Customers must use all content responsibly and in accordance with institutional policies. Submission of purchased content as original assessed work is prohibited and remains the customer’s responsibility.</p>'],
             'register' => ['title' => 'Register', 'content' => '[woocommerce_my_account]'],
             'login' => ['title' => 'Login', 'content' => '[woocommerce_my_account]'],
             'my-account' => ['title' => 'My Account', 'content' => '[woocommerce_my_account]'],
@@ -353,7 +355,7 @@ class AWS_Website_Kit
             <div class="aws-announcement"><?php echo esc_html($settings['announcement']); ?></div>
             <header class="aws-nav">
                 <div class="aws-logo">Academic Writing UK</div>
-                <button class="aws-menu-toggle" type="button" aria-expanded="false">☰</button>
+                <button class="aws-menu-toggle" type="button" aria-expanded="false" aria-label="Toggle menu">☰</button>
                 <nav class="aws-menu">
                     <a href="<?php echo esc_url(home_url('/')); ?>">Home</a>
                     <a href="<?php echo esc_url(home_url('/pricing')); ?>">Pricing</a>
@@ -420,11 +422,11 @@ class AWS_Website_Kit
 
             <section class="aws-section">
                 <h2>Featured Services with Pricing Preview</h2>
-                <div class="aws-tabs">
-                    <button type="button" class="active" data-tab="dissertation">Dissertation</button>
-                    <button type="button" data-tab="essay">Essay</button>
-                    <button type="button" data-tab="thesis">Thesis</button>
-                    <button type="button" data-tab="cv">CV</button>
+                <div class="aws-tabs" role="tablist" aria-label="Featured services">
+                    <button type="button" class="active" data-tab="dissertation" role="tab" aria-selected="true" tabindex="0">Dissertation</button>
+                    <button type="button" data-tab="essay" role="tab" aria-selected="false" tabindex="-1">Essay</button>
+                    <button type="button" data-tab="thesis" role="tab" aria-selected="false" tabindex="-1">Thesis</button>
+                    <button type="button" data-tab="cv" role="tab" aria-selected="false" tabindex="-1">CV</button>
                 </div>
                 <div class="aws-pricing-preview">
                     <div><strong>Standard</strong><span>From £9.99/page</span></div>
@@ -545,7 +547,15 @@ class AWS_Website_Kit
         $compact = $atts['compact'] === '1';
 
         $success = isset($_GET['aws_order']) && $_GET['aws_order'] === 'submitted';
-        $error = isset($_GET['aws_error']) ? sanitize_text_field(wp_unslash($_GET['aws_error'])) : '';
+        $message_token = isset($_GET['aws_msg']) ? sanitize_key(wp_unslash($_GET['aws_msg'])) : '';
+        $error = '';
+        if (! empty($message_token)) {
+            $stored_message = get_transient('aws_msg_' . $message_token);
+            if (is_string($stored_message) && $stored_message !== '') {
+                $error = sanitize_text_field($stored_message);
+            }
+            delete_transient('aws_msg_' . $message_token);
+        }
 
         ob_start();
         ?>
@@ -641,12 +651,14 @@ class AWS_Website_Kit
     {
         $deadline_ts = strtotime($deadline);
         $now_ts = current_time('timestamp');
+        $urgent_cutoff = $now_ts + self::URGENT_THRESHOLD_HOURS * HOUR_IN_SECONDS;
+        $express_cutoff = $now_ts + self::EXPRESS_THRESHOLD_HOURS * HOUR_IN_SECONDS;
 
-        if ($deadline_ts <= $now_ts + DAY_IN_SECONDS * 3) {
+        if ($deadline_ts <= $urgent_cutoff) {
             return 'urgent';
         }
 
-        if ($deadline_ts <= $now_ts + DAY_IN_SECONDS * 6) {
+        if ($deadline_ts <= $express_cutoff) {
             return 'express';
         }
 
@@ -709,7 +721,7 @@ class AWS_Website_Kit
         $comments = sanitize_textarea_field(wp_unslash($_POST['comments'] ?? ''));
         $coupon_code = sanitize_text_field(wp_unslash($_POST['coupon_code'] ?? ''));
         $customer_name = sanitize_text_field(wp_unslash($_POST['customer_name'] ?? ''));
-        $customer_email = sanitize_email(wp_unslash($_POST['customer_email'] ?? ''));
+        $customer_email = strtolower(trim(sanitize_email(wp_unslash($_POST['customer_email'] ?? ''))));
 
         if (
             empty($service_type) ||
@@ -725,6 +737,10 @@ class AWS_Website_Kit
             $this->redirect_with_error('Please complete all required fields correctly.');
         }
 
+        if (! preg_match('/^(?=.*\\p{L})[\\p{L}\\s\\-\'\\.]{2,100}$/u', $customer_name)) {
+            $this->redirect_with_error('Please enter a valid name.');
+        }
+
         if (strtotime($deadline) < (current_time('timestamp') + 6 * HOUR_IN_SECONDS)) {
             $this->redirect_with_error('Deadline must be at least 6 hours from now.');
         }
@@ -734,12 +750,24 @@ class AWS_Website_Kit
 
         $brief_url = '';
         if (! empty($_FILES['brief_file']['name'])) {
-            $allowed_types = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+            $allowed_mimes = [
+                'pdf' => 'application/pdf',
+                'doc' => 'application/msword',
+                'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'jpg' => 'image/jpeg',
+                'jpeg' => 'image/jpeg',
+                'png' => 'image/png',
+            ];
             $filename = sanitize_file_name(wp_unslash($_FILES['brief_file']['name']));
             $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+            $filetype = wp_check_filetype_and_ext($_FILES['brief_file']['tmp_name'], $filename, $allowed_mimes);
             $size = (int) $_FILES['brief_file']['size'];
 
-            if (! in_array($extension, $allowed_types, true)) {
+            if (preg_match('/\\.(php|phtml|phar|js|sh|exe|bat)$/i', $filename) || empty($extension) || ! array_key_exists($extension, $allowed_mimes)) {
+                $this->redirect_with_error('Invalid file name or extension.');
+            }
+
+            if (empty($filetype['ext']) || empty($filetype['type'])) {
                 $this->redirect_with_error('Invalid file type. Allowed: PDF, DOC, DOCX, JPG, JPEG, PNG.');
             }
 
@@ -764,6 +792,7 @@ class AWS_Website_Kit
             'post_status' => 'publish',
             'post_title' => sprintf('Order - %s - %s', $customer_name, current_time('mysql')),
             'post_content' => wp_kses_post($instructions),
+            'post_author' => (int) get_current_user_id(),
         ]);
 
         if (is_wp_error($order_id) || ! $order_id) {
@@ -781,27 +810,32 @@ class AWS_Website_Kit
         update_post_meta($order_id, '_aws_brief_url', $brief_url);
         update_post_meta($order_id, '_aws_customer_name', $customer_name);
         update_post_meta($order_id, '_aws_customer_email', $customer_email);
+        update_post_meta($order_id, '_aws_customer_user_id', (int) get_current_user_id());
         update_post_meta($order_id, '_aws_total', $total);
         update_post_meta($order_id, '_aws_status', 'Pending');
 
         $admin_email = get_option('admin_email');
         $subject_line = 'New Academic Writing Order #' . $order_id;
+        $safe_customer_name = wp_strip_all_tags($customer_name);
+        $safe_service_type = wp_strip_all_tags($service_type);
         $body = "A new order has been submitted.\n\n"
             . "Order ID: {$order_id}\n"
-            . "Customer: {$customer_name} ({$customer_email})\n"
-            . "Service: {$service_type}\n"
+            . "Customer: {$safe_customer_name} ({$customer_email})\n"
+            . "Service: {$safe_service_type}\n"
             . "Level: {$academic_level}\n"
             . "Word Count: {$word_count}\n"
             . "Deadline: {$deadline}\n"
             . "Estimated Total: £" . number_format($total, 2);
 
-        wp_mail($admin_email, $subject_line, $body);
+        $admin_mail_sent = wp_mail($admin_email, $subject_line, $body);
+        update_post_meta($order_id, '_aws_admin_mail_sent', $admin_mail_sent ? '1' : '0');
 
-        wp_mail(
+        $customer_mail_sent = wp_mail(
             $customer_email,
             'Order Received - Academic Writing Services',
-            "Hi {$customer_name},\n\nWe have received your request for {$service_type}.\nEstimated total: £" . number_format($total, 2) . "\nOur team will contact you shortly."
+            "Hi {$safe_customer_name},\n\nWe have received your request for {$safe_service_type}.\nEstimated total: £" . number_format($total, 2) . "\nOur team will contact you shortly."
         );
+        update_post_meta($order_id, '_aws_customer_mail_sent', $customer_mail_sent ? '1' : '0');
 
         $redirect_url = wp_get_referer() ?: home_url('/');
         wp_safe_redirect(add_query_arg('aws_order', 'submitted', $redirect_url));
@@ -811,7 +845,9 @@ class AWS_Website_Kit
     private function redirect_with_error(string $message): void
     {
         $redirect_url = wp_get_referer() ?: home_url('/');
-        wp_safe_redirect(add_query_arg('aws_error', $message, $redirect_url));
+        $token = wp_generate_password(12, false, false);
+        set_transient('aws_msg_' . $token, sanitize_text_field($message), MINUTE_IN_SECONDS);
+        wp_safe_redirect(add_query_arg('aws_msg', $token, $redirect_url));
         exit;
     }
 
@@ -821,12 +857,11 @@ class AWS_Website_Kit
             return '<p>Please login to view your orders.</p>';
         }
 
-        $user = wp_get_current_user();
+        $user_id = get_current_user_id();
         $orders = get_posts([
             'post_type' => 'aws_order',
             'numberposts' => 20,
-            'meta_key' => '_aws_customer_email',
-            'meta_value' => $user->user_email,
+            'author' => $user_id,
         ]);
 
         if (empty($orders)) {

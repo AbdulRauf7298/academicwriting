@@ -25,6 +25,7 @@
 .aws-tabs{display:flex;gap:8px;flex-wrap:wrap}
 .aws-tabs button{border:1px solid #dbe2ea;background:#fff;border-radius:50px;padding:8px 16px;cursor:pointer}
 .aws-tabs .active{background:var(--aws-primary);color:#fff}
+.aws-tabs button:focus-visible,.aws-service-page summary:focus-visible{outline:2px solid var(--aws-accent);outline-offset:2px}
 .aws-pricing-preview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
 .aws-pricing-preview div{background:#fff;border-radius:8px;border:1px solid #dbe2ea;padding:14px;text-align:center}
 .aws-testimonials{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
